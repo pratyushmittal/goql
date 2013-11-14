@@ -96,7 +96,7 @@ func (row Row) get(text string, head Head) float64 {
     return val
 }
 
-func evaluate(row Row, query Equation, head Head, filtered chan Row) {
+func evaluate(row Row, query Equation, head Head, last bool, filtered chan Row) {
     lhs := row.get(query.lhs, head)
     rhs := row.get(query.rhs, head)
     satisfies := false
@@ -115,26 +115,47 @@ func evaluate(row Row, query Equation, head Head, filtered chan Row) {
     if satisfies == true {
         filtered <- row
     }
+    if last {
+        close(filtered)
+    }
 }
 
 
-func filter(db DB, query string) chan Row{
+func filter(db DB, query string) []Row{
     // Convert string query to query struct
     eq := strToEq(query)
 
     // Loop each row to see if eq satisfied
-    filtered := make(chan Row)
+    filtered := []Row{}
     for _, row:= range db.rows {
-        go evaluate(row, eq, db.columns, filtered)
+        func(row Row) {
+            lhs := row.get(eq.lhs, db.columns)
+            rhs := row.get(eq.rhs, db.columns)
+            satisfies := false
+            switch eq.operator{
+            case ">":
+                if lhs > rhs {satisfies = true}
+            case ">=":
+                if lhs >= rhs {satisfies = true}
+            case "<":
+                if lhs < rhs {satisfies = true}
+            case "<=":
+                if lhs <= rhs {satisfies = true}
+            case "=":
+                if lhs == rhs {satisfies = true}
+            }
+            if satisfies == true {
+                filtered = append(filtered, row)
+            }
+        }(row)
     }
-    close(filtered)
     return filtered
 }
 
 
 func main() {
     // convert csv to goql-db
-    db := csv2db("sample.csv", 1000)
+    db := csv2db("sample.csv", -1)
     fmt.Println(len(db.rows))
 
     //Begin time profiling
@@ -145,12 +166,7 @@ func main() {
     fmt.Println(query)
 
     filtered := filter(db, query)
-    length := 0
-    for _ = range(filtered) {
-        length += 1
-    }
-
-    fmt.Println(length)
+    fmt.Println(len(filtered))
     fmt.Println(time.Since(start))
 
     /*
@@ -161,6 +177,8 @@ func main() {
     Pandas fucking rocks man
 
     Try 2:
+    change 1000 to 100000
+    db := csv2db("sample.csv", 1000)
     Can't get go routines to work yet.
     Python is very Pythonic in too many ways. Example
     support for default arguments. In Go, the default
